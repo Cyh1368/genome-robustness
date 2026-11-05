@@ -1,0 +1,423 @@
+\documentclass{article}
+
+% \usepackage{neurips_2026}
+\usepackage[final]{neurips_2026}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % figures
+\usepackage{amsmath}        % equations
+\usepackage{subcaption}     % side-by-side subfigures
+\usepackage{float}
+
+% Handy marker for things still to fill in; delete before submitting.
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\title{Contrastive Robustness for Genome Language Models}
+
+\author{Cheng-You Ho \And Hriday Meka}
+
+\begin{document}
+
+\maketitle
+
+% \begin{abstract}
+%   One-paragraph summary of the problem, approach, and evaluation plan (optional for the proposal).
+% \end{abstract}
+
+
+%==============================================================================
+\section{Problem Definition}
+\label{sec:problem}
+%==============================================================================
+
+% \subsection{Problem Statement}
+DNA is a string of nucleotides \textit{A}, \textit{C}, \textit{T}, and \textit{G}. Nucleotide triplets are called \textit{codons}, most of which correspond to an amino acid, the fundamental element of proteins. There are 64 different codons; however, they only make 20 distinct types of amino acids. Because some codons make the same amino acid, it may be harmless to modify a nucleotide in a DNA sequence if the final protein turns out to be identical.
+
+Genome Language Models (gLMs) such as DNABERT-2 (\cite{zhou2024dnabert2}) are transformers pretrained on DNA sequences. They can be fine-tuned for downstream tasks, such as classifying what DNA sequences lead to antibiotic-resistant proteins, and which do not.
+
+Our goal for this project is to identify whether existing gLMs are robust to input nucleotide modifications in the task of classifying for antibacterial resistance. DNABERT-2 and the Nucleotide Transformer (\cite{dalla2025nucleotide}) will be our baselines. Because we know which codons have synonyms and which do not, we could cheaply create a variety of input sequences.
+
+% \subsection{Motivation}
+% \todo{Why is this problem important or interesting? Who benefits from a solution?}
+
+% \subsection{Setting and Overarching Goal}
+% \todo{Describe the setting (task, data modality, model family, constraints) and the overall goal of the project.}
+
+
+%==============================================================================
+\section{Relevance to Trustworthy Aspects}
+\label{sec:trustworthy}
+%==============================================================================
+
+The main goal of this work is to \textit{evaluate} the \textit{robustness} of gLMs. A robust gLM should change its prediction only when the modification on the input is one what will change the final protein. 
+
+We will \textit{extend} existing methods by investigating contrastive fine-tuning with synonymous and disruptive DNA variants. Finally, we seek to \textit{explain} the gLM after fine-tuning to explore whether it is aligned with our intent.
+
+% \subsection{Connection to Course Aspects}
+% \todo{Which aspect(s) does the project connect to: adversarial attacks, robustness, explainability, fairness, privacy, or efficiency? Explain the link.}
+
+% \subsection{Applying, Evaluating, or Extending}
+% \todo{Specify whether you are \emph{applying}, \emph{evaluating}, or \emph{extending} the chosen aspect(s), and why.}
+
+
+%==============================================================================
+\section{Dataset}
+\label{sec:dataset}
+%==============================================================================
+
+% \subsection{Dataset Description}
+% \todo{Name the dataset(s), source/link, size, number of classes/features, train/val/test split, and license.}
+
+We will use two datasets: \href{https://card.mcmaster.ca}{Comprehensive Antibiotic Resistance Database (CARD)} and \href{https://github.com/Microbial-Ecology-Group/AMRplusplus}{MEGARes}. CARD is a collection of over 6,000 peer-reviewed resistance genes, their protein products, and phenotypes (e.g. resistance level.) MEGARes contains over 7,000 Nucleotide sequences spanning 4 antimicrobial types and over 50 resistance classes.
+
+Summary statistics of the two datasets are shown in Figure \ref{tab:datasets}, and a visualization of the dataset is shown in Figure \ref{fig:datasets}. Both datasets are mostly short enough to fit inside the DNA model's context window. In addition, around 95\% of codons in these datasets contain a synonym, leaving us with plenty of room for modifying a genetic sequence into a synonymous one.
+
+
+% \begin{table}[t]
+% \centering
+% \small
+% \caption{Comparison of CARD and MegaRes (drugs subset). ``Valid'' sequences are
+% A/C/G/T-only, in frame (length divisible by 3), start with a start codon, end
+% with a stop codon, and have no internal stop codon.}
+% \label{tab:datasets}
+% \begin{tabular}{lrr}
+% \toprule
+%  & \textbf{CARD} & \textbf{MegaRes v2} \\
+% \midrule
+% Total nucleotide sequences                & 6,415 & 7,126 \\
+% \quad protein-coding (rRNA removed)       & 6,329 & 7,126 \\
+% \quad A/C/G/T only                        & 6,314 (99.8\%) & 7,086 (99.4\%) \\
+% \quad valid protein-encoding              & 6,184 (97.7\%) & 6,372 (89.4\%) \\
+% Total bases (Mb)                          & 6.45 & 7.34 \\
+% \midrule
+% Antimicrobial types                       & 1 (antibiotics) & 4 in the full DB \\
+% Resistance (drug) classes                 & 49 & 27 \\
+% Label structure                           & multi-label & single-label \\
+% \quad genes with $\geq 2$ classes         & 64.3\% & 0\% \\
+% \midrule
+% Median length (nt)                        & 873 & 861 \\
+% Length range (nt)                         & 162--8,673 & 162--5,297 \\
+% Largest class (share of sequences)        & 54.3\% & 54.9\% \\
+% Classes with $\geq 100$ sequences         & 14 & 10 \\
+% Classes with $< 50$ sequences             & 30 & 14 \\
+% Exact duplicate sequences                 & 26 (0.4\%) & 3 (0.04\%) \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+% Preamble:
+% \usepackage{graphicx}
+% \usepackage{caption}
+
+\begin{figure*}[t]
+  \centering
+  \begin{minipage}[t]{0.5\textwidth}
+    \vspace{0pt}
+    \centering
+    \includegraphics[width=\linewidth]{table1.png}
+    \captionof{table}{\textbf{Comparison of CARD and MegaRes (drugs subset).}
+    "Valid" sequences are A/C/G/T-only, in frame (length divisible by 3), start with a start codon, end with a stop codon, and have no internal stop codon.}
+    \label{tab:datasets}
+  \end{minipage}%
+  \hfill
+  \begin{minipage}[t]{0.48\textwidth}
+    \vspace{0pt}
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig_combined_ABC.pdf}
+    \caption{\textbf{Composition of the two resistance-gene datasets.}
+    Blue: CARD; orange: MegaRes.
+    \textbf{(a)} Number of sequences in each drug class. In CARD, 64.3\%
+    of genes are annotated with more than one class, but each gene is
+    limited to one label in MegaRes.
+    \textbf{(b)} Sequence lengths in nucleotides.
+    \textbf{(c)} How much room each gene leaves for synonymous recoding.}
+    \label{fig:datasets}
+  \end{minipage}
+\end{figure*}
+
+% Blue: CARD; orange: MegaRes (same colours in all panels).
+  % \textbf{(a)} Number of sequences in each drug class for CARD and MegaRes v2 (right; 7,126 sequences across 27 classes).  In CARD, 64.3\% of genes are annotated with more than one class, but each gene is limited to one label in MegaRes.
+  % \textbf{(b)} Sequence lengths in nucleotides. The median is 873\,nt for CARD and 861\,nt for MegaRes. The dashed line at about 2,300\,nt marks 512 input tokens. Only 1.7\% of CARD sequences and 4.2\% of MegaRes sequences are longer than this.
+  % \textbf{(c)} How much room each gene leaves for synonymous recoding. Left: the share of codons in each gene that have at least one synonymous alternative (median 95.8\% for CARD, 95.9\% for MegaRes). Right: the number of distinct synonymous recodings per gene, as $\log_{10}$ (median $10^{152}$ for CARD, $10^{148}$ for MegaRes). }
+
+As for potential challenges, both datasets contain many classes with fewer than 50 sequences. To ensure the model performs well on these smaller classes as well, we would use a metric similar to macro F1 to weight each class equally, and report uncertainty based on class size.
+
+Another challenge is the noise in the data. After removing sequences lacking fundamental DNA elements, 2.3\% of CARD and 10.6\% of MegaRes entries are dropped. In addition, the largest classes are mostly different among the two datasets. A model which performs well on one may perform worse on the other. Therefore, we will be careful in reporting cross-validation and in-distribution results.
+
+
+%==============================================================================
+\section{Related Work}
+\label{sec:related}
+%==============================================================================
+
+A summary of 5 prior works is shown in \ref{tab:related}. \citet{yoo2024exploring} supports our motivation for this work. \citet{kurth2026explanations} demonstrated that Genome Language Models (gLMs) can be explained; we will reference this work if our results highlight the need for interpretability and explanation. On another aspect of adversarial robustness, \citet{koilakos2026poisoning} investigates poisoning attacks and lights up a potential path for us to further expand our scope. \citet{yoo2025llm} showed the capabilities of LLMs in the same category of tasks which we tackle, and it would serve as a baseline.
+
+\begin{table}[t]
+  \caption{Summary of related work.}
+  \label{tab:related}
+  \centering
+  \small
+  \begin{tabular}{p{0.28\linewidth}p{0.62\linewidth}}
+    \toprule
+    Work & Summary of approach \\
+    \midrule
+    \citet{yoo2024exploring} & Applied substitutions to DNA sequences and found that DNA models are highly susceptible to adversarial attacks; showed that adversarial training method is a defense mechanism. \\
+    \citet{koilakos2026poisoning} & Adversarial contamination of the training data; showed that less than 1\% of poisoning nevertheless negatively impacts the model. \\
+    \citet{kurth2026explanations} & Modified gradient division layers of DNABERT-2 and compared it with explanable CNNs; found that gLMs provide reliable, biology-grounded explanations. \\
+    \citet{yoo2025llm} & Showed that large language models can perform similarly to genomic language models on predicting antimicrobial resistance genes. \\
+    \citet{ma2025rccr} & Takes advantage of DNA sequence reversal symmetry to test model robustness. The regularization method significantly reduces prediction flips and errors.\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% %==============================================================================
+% \section{Proposed Approach}
+% \label{sec:approach}
+% %==============================================================================
+
+% \subsection{Overview}
+
+% We plan on intervening at the training stage. In particular, the genetic code makes it apparent which nucleotide edits preserve the encoded protein and which destroy it, so we have the supervision signal needed to bolster robustness. At a high level, synonymous recodings of the gene should map to nearly identical representations, while frameshift and nonsense variants should be quite far apart. More specifically, for each training sequence $s$, we'll generate positive $x^+$ (a "synonymous recoding" that's the same protein) and a negative $x^-$ (like a frameshift or premature stop), and will then add a contrastive term to the fine-tuning objective.
+
+% \subsection{Algorithms and Methods}
+% \paragraph{Variant generation.} For each gene, we build two edited copies: the positive $x^+$, which swaps a fraction $p$ of codons for synonyms (the nucleotides change, but the encoded protein does not), and the negative $x^-$, which deletes a nucleotide (frameshift) or adds a stop codon (truncation). Notably, roughly $96\%$ of codons admit a synonym, leading to a median of $10^{152}$ recodings per CARD gene (Figure~\ref{fig:datasets}c).
+
+% \paragraph{Contrastive objective.} The baseline models have no reason to treat these copies differently; after all, they're just small string edits! With the contrastive objective, we aim to supply that reason. With the pooled gLM embedding $h_\theta(\cdot)$, we ask the model to pick $x_b^+$ out of a lineup including $\mathcal{N}(x_b)$ that contains the destructive variant $x_b^-$ and the other $B - 1$ batch genes. The negative variant is a distractor that ends up being quite informative, as it is nearly identical as a string, so we know we want to correct the models that keep it nearby. With the cosine similarity $\mathrm{sim}$ and a temperature $\tau$, the InfoNCE loss is expressed as the negative log-probability of picking the positive, trained jointly with the ordinary classification objective,
+
+% \begin{equation}
+%   \mathcal{L}_{\mathrm{con}}
+%   = -\frac{1}{B}\sum_{b=1}^{B}
+%     \log \frac{e^{\,\mathrm{sim}(h_\theta(x_b),\, h_\theta(x_b^+))/\tau}}
+%     {e^{\,\mathrm{sim}(h_\theta(x_b),\, h_\theta(x_b^+))/\tau}
+%      + \sum_{x^- \in \mathcal{N}(x_b)} e^{\,\mathrm{sim}(h_\theta(x_b),\, h_\theta(x^-))/\tau}},
+%   \quad
+%   \mathcal{L} = \mathcal{L}_{\mathrm{cls}} + \lambda\,\mathcal{L}_{\mathrm{con}},
+%   \label{eq:objective}
+% \end{equation}
+
+% where $\lambda$ is a hyperparameter balancing the objectives (larger values care more about embedding structure than classification accuracy). We will select it by cross-validation.
+
+% \paragraph{Hard negative mining.} These models aren't dumb! Most of the random recodings likely will not fool the model, so if we only ever train on randomly chosen recodings, the model may stay confused by the same hard ones it was confused by before fine-tuning. Robustness is fundamentally a worst-case metric: as such, we will train a separate version that also searches for troublesome recodings rather than just sampling them. Under a query budget for tested sequences, we'll go codon by codon and keep synonymous substitutions that move embeddings the most ($\|h_\theta(x) - h_\theta(x^+)\|$), and train on those. This is a similar idea to adversarial training, but here the allowed perturbations come from the genetic code, not an $\ell_p$ ball.
+
+% \paragraph{Compared models.} We'll train four versions of the model across the same data split and compute budget. We'll have a plain, fine-tuned baseline; a version that adds perturbed sequences to training data much like \citet{yoo2024exploring}; a model trained on our contrastive loss with randomly chosen synonymous positives; and a model trained on our contrastive loss with hard-mined positives. Comparing the last two will make apparent whether or not it is worth searching for hard cases, and comparing relative to the second tells us if the contrastive objective even helps beyond standard data augmentation. Of course, the first is our control group. We'll use DNABERT-2 \citep{zhou2024dnabert2} and Nucleotide Transformer \citep{dalla2025nucleotide}
+%  as our underlying models (LoRA will be needed to fit compute budget).
+
+% \subsection{Differences, Challenges, and Modifications}
+
+% As discussed earlier, the closest work to what we're doing by \citet{yoo2024exploring} applies substitution to DNA sequences, but they do not examine the state of the encoded protein. As such, the idea of the harmless edit is not really correlated with biology. \citet{ma2025rccr}, in contrast, use an invariance known as "reverse-complement symmetry", complementary to ours. As such, by taking properties of invariance from the genetic code, we can acquire a set of edits that provably \textit{preserve} the protein as well as a matched set that provably \textit{destroys} it, allowing us to symmetrically measure robustness and sensitivity, as opposed to just checking that predictions don't change. Moreover, the hard-negative search where we search for the worst-case recodings is also different from both.
+
+% We expect a few difficulties! Firstly, our method only makes sense for protein-coding DNA; otherwise, translation is undefined (and so there would be no underlying protein to examine). As such, our pipeline only keeps validated coding sequences (Table~\ref{tab:datasets}). Second, codon choice isn't actually biologically meaningless. Organisms consistently show evolutionary codon bias (preferences for some synonyms over others), and so training the model to ignore the spelling entirely might throw away some information that is important to general performance. We'll account for this by freezing embeddings and training a small probe to try and predict organisms of origin and GC content (relevant evolutionarily), and see whether that gets worse than it was on the baseline. Finally, contrastive objectives aren't entirely trustworthy. The model may, for instance, map everything to the same point, and seem robust because it stops responding to input entirely. We'll examine embedding variance during the training, and report accuracy next to each robustness number mto properly contextualize model behavior.
+
+% %==============================================================================
+% \section{Evaluation Metrics}
+% \label{sec:evaluation}
+% %==============================================================================
+
+% \subsection{Metrics and Success Criteria}
+
+% Let $\hat{y}(x)$ be the predicted resistance class over a test set of $N$ genes. We'll report five numbers. First, \textbf{Synonymous flip rate} ("SFR", where lower is better). $\frac{1}{N}\sum_i \mathbf{1}[\hat{y}(x_i^+) \neq \hat{y}(x_i)]$; SFR is basically how often a harmless edit changes the prediction, which is the main weakness we're trying to fix! \textbf{Destructive flip rate} ("DFR", where higher is better) is the same count as above, but on the frameshift/nonsense variants when the underlying protein is ruined, and the prediction \emph{should} change. \textbf{Minimum flip distance} (higher is better) is the lowest number of synonymous substitutions needed to flip the prediction. This will be found by a greedy search subject to a query budget inspired by DeepFool; this will say how far the model sits from its decision boundary when only synonymous edits are permitted. Next, \textbf{Embedding shift rate} (higher is better), $\mathbb{E}\|h(x^-)-h(x)\| / \mathbb{E}\|h(x^+)-h(x)\|$, basically shows the effect of the variants on the representations rather than just the classification (which we care a lot about). Finally, $\textbf{Performance}$ will be measured by the generic macro-F1 metric on unedited sequences (as opposed to accuracy, as here the largest class covers over $54\%$ of both datasets, so we want to account for that disparity).
+
+% The project will be considered successful if SFR drops by at least $10$ points from baseline, macro-F1 stays within $2$ points, and DFR does not go down. Notably, all 3 conditions are needed together, as a model that ignores its input will get a perfect SFR, but the other capabilities will be tarnished. We also expect the hard-mined positives to beat the random ones for minimum flip distance, as that metric is about worst-case edits, which is exactly what we will mine for.
+
+% \subsection{Planned Analyses}
+% % Include the analyses that fit your project: ??????
+% \begin{itemize}
+%   \item \textbf{Performance evaluation:} all 5 of the metrics for each of the 4 models, on both underlying models and both datasets, with 3 seeds each (variance). 
+%   \item \textbf{Uncertainty evaluation:} standard deviation across the seeds and boostrap confidence intervals on the per-class results. The latter is important as $30$ CARD and $14$ MegaRes classes have fewer than $50$ sequences, so just one flipped prediction may move metrics by several points.
+%   \item \textbf{Ablation studies:} we will vary contrastive weight $\lambda$ and the fraction of recoded codons $p$ to see how sensitive results are to each, compare random positives to hard positives, and train a version of the model with destructive variants removed from loss (to see if pushing broken sequences away is even needed on top of just putting synonymous ones together).
+%   \item \textbf{Case studies:} we will take a look at individual genes where the baseline models change their predictions after a single synonymous substitutions but our model was not, and look at which codon we edited to try to explain.
+%   \item \textbf{Visualization / embedding analyses:} we'll plot UMAP projections of all genes alongside synonymous and destructive variants (before and after fine-tuning) to see if the embedding is doing what we intended. Moreover, we'll compute integrated gradients across nucleotide positions to see where the model is actually looking! A model that truly understands the genetic code should, in theory, weight the first two positions of the codon more than the third, as the first two are more important for determination while the third is usually synonymous to the codon.
+% \end{itemize}
+
+\section{Proposed Approach}
+\label{sec:approach}
+
+% \subsection{Overview}
+
+We plan on intervening at the training stage by adding a contrastive
+term to the fine-tuning objective. Synonymous recodings of a gene
+should map to nearly identical representations, while frameshift
+and nonsense variants should be far apart.
+
+% \subsection{Algorithms and Methods}
+
+% \paragraph{Variant generation.}
+For each gene, we build two edited copies: a positive $x^+$, which
+swaps a fraction $p$ of codons for synonyms without changing the
+encoded protein, and a negative $x^-$, which deletes a nucleotide
+(frameshift) or adds a stop codon (truncation).
+
+\paragraph{Contrastive objective.}
+With the pooled gLM embedding $h_\theta(\cdot)$, we ask the model to
+pick $x_b^+$ from a lineup whose negatives $\mathcal{N}(x_b)$ contain
+the destructive variant $x_b^-$ and the other $B-1$ batch genes.
+The destructive variant is informative because it is nearly
+identical as a whole sequence. With cosine similarity $\mathrm{sim}$ and
+temperature $\tau$, the InfoNCE loss is trained jointly with the
+classification objective:
+\begin{equation}
+  \mathcal{L}_{\mathrm{con}}
+  = -\frac{1}{B}\sum_{b=1}^{B}
+    \log \frac{e^{\,\mathrm{sim}(h_\theta(x_b),\,h_\theta(x_b^+))/\tau}}
+    {e^{\,\mathrm{sim}(h_\theta(x_b),\,h_\theta(x_b^+))/\tau}
+     + \sum_{x^- \in \mathcal{N}(x_b)}
+       e^{\,\mathrm{sim}(h_\theta(x_b),\,h_\theta(x^-))/\tau}},
+  \quad
+  \mathcal{L}=\mathcal{L}_{\mathrm{cls}}
+  +\lambda\,\mathcal{L}_{\mathrm{con}}.
+  \label{eq:objective}
+\end{equation}
+We will select $\lambda$, which balances the objectives,
+by cross-validation.
+
+\paragraph{Hard negative mining.}
+Random recodings may not fool the model, so we will train a separate
+version that searches for troublesome recodings. Under a query budget,
+we will go codon by codon and keep synonymous substitutions that move
+embeddings the most
+($\|h_\theta(x)-h_\theta(x^+)\|$), then train on those.
+This resembles adversarial training, but the allowed perturbations
+come from the genetic code.
+
+\paragraph{Compared models.}
+We will train four versions across the same data split and compute
+budget: a plain fine-tuned baseline; a version with perturbed
+training sequences, as in \citet{yoo2024exploring}; contrastive
+fine-tuning with random synonymous positives; and contrastive
+fine-tuning with hard-mined positives. These comparisons test whether
+contrastive learning improves on data augmentation and whether
+searching for hard cases helps. We will use DNABERT-2
+\citep{zhou2024dnabert2} and Nucleotide Transformer
+\citep{dalla2025nucleotide}, with LoRA to fit the compute budget.
+
+% \subsection{Differences, Challenges, and Modifications}
+
+\citet{yoo2024exploring} apply substitutions without examining the
+encoded protein, while \citet{ma2025rccr} use reverse-complement
+symmetry, conceptually similar to our proposed method. Using the genetic code gives us
+protein-preserving and destructive edits, allowing us to measure
+both robustness and sensitivity. Our search for worst-case
+recodings also differs from both.
+
+Our method only applies to protein-coding DNA, so we retain validated
+coding sequences (Table~\ref{tab:datasets}). Codon choice also reflects
+evolutionary preferences, and ignoring it might discard useful information.
+We will therefore freeze embeddings and train small probes to predict
+organisms of origin and GC content, comparing against the baseline.
+Finally, to detect representation collapse, we will monitor embedding
+variance and report classification performance alongside robustness.
+
+\section{Evaluation Metrics}
+\label{sec:evaluation}
+
+% \subsection{Metrics and Success Criteria}
+
+Let $\hat{y}(x)$ be the predicted resistance class over $N$ test genes.
+We will report five metrics.
+\textbf{Synonymous flip rate} (SFR; lower is better),
+$\frac{1}{N}\sum_i
+\mathbf{1}[\hat{y}(x_i^+)\neq\hat{y}(x_i)]$,
+measures how often a harmless edit changes the prediction.
+\textbf{Destructive flip rate} (DFR; higher is better) is the
+corresponding rate for frameshift/nonsense variants, where the
+prediction should change.
+\textbf{Minimum flip distance} (higher is better) is the lowest
+number of synonymous substitutions needed to flip a prediction,
+estimated by greedy search under a query budget inspired by DeepFool.
+\textbf{Embedding shift rate} (higher is better),
+$\mathbb{E}\|h(x^-)-h(x)\|/
+\mathbb{E}\|h(x^+)-h(x)\|$,
+measures the variants' relative effects on representations.
+Finally, \textbf{performance} will be measured by macro-F1 on unedited
+sequences to account for class imbalance.
+
+The project will be considered successful if SFR drops by at least
+10 points from baseline, macro-F1 stays within 2 points, and DFR
+does not decrease. All three conditions are needed to rule out a
+model that achieves consistency by ignoring its input. We also
+expect hard-mined positives to outperform random positives on
+minimum flip distance. Some items we plan to analyze include the following.
+
+% \subsection{Planned Analyses}
+
+\begin{itemize}
+  \item \textbf{Performance and uncertainty:}
+  Report all five metrics for the four configurations across both
+  underlying models and datasets, using three seeds. Report standard
+  deviations across seeds and bootstrap confidence intervals for
+  per-class results, particularly for classes with fewer than
+  50 sequences.
+
+  \item \textbf{Ablation studies:}
+  Vary contrastive weight $\lambda$ and recoding fraction $p$,
+  compare random and hard positives, and remove destructive variants
+  from the loss to test whether separating broken sequences helps.
+
+  \item \textbf{Case studies:}
+  Examine genes where a single synonymous substitution flips the
+  baseline prediction but not our model's, and inspect the edited
+  codon.
+
+  \item \textbf{Visualization / embedding analyses:}
+  Plot UMAP projections of genes and their variants before and after
+  fine-tuning. Compute integrated gradients across nucleotide
+  positions to examine whether the model weights the first two
+  codon positions more than the third, which is usually synonymous.
+\end{itemize}
+
+
+%==============================================================================
+\section{Timeline}
+\label{sec:timeline}
+%==============================================================================
+
+\begin{table}[H]
+  \caption{Project timeline.}
+  \label{tab:timeline}
+  \centering
+  \small
+  \begin{tabular}{lp{0.60\linewidth}}
+    \toprule
+    Date & Milestone \\
+    \midrule
+    Oct 24 & Finalize data pipeline and variant generators \\
+    Oct 27 & Baseline DNABERT-2 fine-tuned on CARD with a macro-F1 \\
+    Nov 3 & Robustness eval code done, baseline fragility (SFR, DFR) measured \\
+    Nov 10 & Contrastive objective implemented; train with random positives \\
+    Nov 14 & \textbf{Project milestone:} baseline fragility and initial results \\
+    Nov 24 & Mine for worst-case recodings, launch all 16 runs \\
+    Dec 1 & Ablations and seed replicates complete (variance measurements) \\
+    Dec 5  & Draft report \\
+    Dec 12 & Case studies, plots, probing, attributions, revision \\
+    Dec 16 & Final report \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+%==============================================================================
+% References (placeholders: replace with your real entries, or switch to
+% \bibliographystyle{plainnat} + \bibliography{refs} with a refs.bib file)
+%==============================================================================
+% \begin{thebibliography}{10}
+
+% \bibitem{ref1} Hyunwoo Yoo, Haebin Shin, Kaidi Xu, and Gail Rosen. Exploring adversarial robustness in classification tasks using DNA language models. arXiv preprint arXiv:2409.19788, 2024.
+% \bibitem{ref2} \todo{Author, B. Title. Venue, Year.}
+% \bibitem{ref3} \todo{Author, C. Title. Venue, Year.}
+% \bibitem{ref4} \todo{Author, D. Title. Venue, Year.}
+% \bibitem{ref5} \todo{Author, E. Title. Venue, Year.}
+
+% \end{thebibliography}
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
