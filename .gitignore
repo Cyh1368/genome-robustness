@@ -6,3 +6,5 @@
 # AI Agent overrides (optional, keep CLAUDE.md tracked for teams)
 CLAUDE.md
 AGENTS.md
+__pycache__/
+*.py[cod]
